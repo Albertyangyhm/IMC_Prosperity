@@ -61,7 +61,7 @@ class Trader:
         # Compute the mid-price and update rolling history.
         mid_price = (best_bid + best_ask) / 2.0
         self.mid_price_history.append(mid_price)
-        window = 50
+        window = 40
         history = self.mid_price_history[-window:]
         rolling_mean = np.mean(history)
         rolling_std = np.std(history, ddof=1) if len(history) > 1 else 1.0
@@ -77,27 +77,25 @@ class Trader:
             signal = -1   # SELL signal.
 
         # === Inventory-Safe Quoting with Mean-Reversion Adjustment ===
-        # skew = int(-position * 0.05)
-        skew = 0
-        sensitivity = 0.5  # Factor to determine how much mispricing (delta) affects the quote
 
+        sensitivity = 0.5  # Factor to determine how much mispricing (delta) affects the quote
+        
         if signal == 1:
             # Undervalued: mid_price below rolling mean => BUY signal.
             # Compute delta (how much lower the price is compared to the fair value).
             delta = rolling_mean - mid_price   # positive if undervalued
             # Raise our bid aggressively: add a premium proportional to delta.
-            my_bid = best_bid + 1 + skew + int(delta * sensitivity)
-            
+            my_bid = best_bid + 1 + int(delta * sensitivity)
         elif signal == -1:
             # Overvalued: mid_price above rolling mean => SELL signal.
             delta = mid_price - rolling_mean   # positive if overvalued
             # Lower our ask aggressively: subtract a discount proportional to delta.
-            my_ask = best_ask - 1 + skew - int(delta * sensitivity)
+            my_ask = best_ask - 1 - int(delta * sensitivity)
         else:
             # No strong signal: use default quoting based solely on order book plus inventory skew.
             if len(history) > 10:
-                my_bid = best_bid + 1 + skew
-                my_ask = best_ask - 1 + skew
+                my_bid = best_bid + 1 
+                my_ask = best_ask - 1 
 
         # --- Size Adjustment ---
         # Base order size increases when inventory is flat.
@@ -129,23 +127,7 @@ class Trader:
                     kelp_orders.append(Order(product, my_bid, min(size, buyable)))
                 if sellable > 0:
                     kelp_orders.append(Order(product, my_ask, -min(size, sellable)))
-
-        # --- Hard Cut at Edges (No Limit Breach) ---
-        if position >= 40:
-            # When near the long limit, attempt to quickly reduce the position.
-            cut_size = min(10, best_bid_volume, sellable)
-            if cut_size > 0:
-                kelp_orders.append(Order(product, best_bid, -cut_size))
-                print(f"[{product}] Hard cut: SELL additional {cut_size} units at price {best_bid}")
-        elif position <= -40:
-            # When near the short limit, increase the position by buying.
-            cut_size = min(10, best_ask_volume, buyable)
-            if cut_size > 0:
-                kelp_orders.append(Order(product, best_ask, cut_size))
-                print(f"[{product}] Hard cut: BUY additional {cut_size} units at price {best_ask}")
-        
-
-                
+            
         # === Finalize Orders ===    
         result[product] = kelp_orders
         self.time += 1
