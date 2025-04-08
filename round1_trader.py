@@ -5,16 +5,16 @@ import math
 
 # storing string as const to avoid typos
 SUBMISSION = "SUBMISSION"
-PEARLS = "PEARLS"
+RR = "RAINFOREST_RESIN"
 BANANAS = "BANANAS"
 
 PRODUCTS = [
-    PEARLS,
+    RR,
     BANANAS,
 ]
 
 DEFAULT_PRICES = {
-    PEARLS : 10_000,
+    RR : 10_000,
     BANANAS : 5_000,
 }
 
@@ -25,7 +25,7 @@ class Trader:
         print("Initializing Trader...")
 
         self.position_limit = {
-            PEARLS : 20,
+            RR : 20,
             BANANAS : 20,
         }
 
@@ -125,22 +125,22 @@ class Trader:
 
 
     # Algorithm logic
-    def pearls_strategy(self, state : TradingState):
+    def rr_strategy(self, state : TradingState):
         """
-        Returns a list of orders with trades of pearls.
+        Returns a list of orders with trades of rr.
 
         Comment: Mudar depois. Separar estrategia por produto assume que
         cada produto eh tradado independentemente
         """
 
-        position_pearls = self.get_position(PEARLS, state)
+        position_rr = self.get_position(RR, state)
 
-        bid_volume = self.position_limit[PEARLS] - position_pearls
-        ask_volume = - self.position_limit[PEARLS] - position_pearls
+        bid_volume = self.position_limit[RR] - position_rr
+        ask_volume = - self.position_limit[RR] - position_rr
 
         orders = []
-        orders.append(Order(PEARLS, DEFAULT_PRICES[PEARLS] - 1, bid_volume))
-        orders.append(Order(PEARLS, DEFAULT_PRICES[PEARLS] + 1, ask_volume))
+        orders.append(Order(RR, DEFAULT_PRICES[RR] - 1, bid_volume))
+        orders.append(Order(RR, DEFAULT_PRICES[RR] + 1, ask_volume))
 
         return orders
 
@@ -206,17 +206,17 @@ class Trader:
 
         # PEARL STRATEGY
         try:
-            result[PEARLS] = self.pearls_strategy(state)
+            result[RR] = self.rr_strategy(state)
         except Exception as e:
-            print("Error in pearls strategy")
+            print("Error in rr strategy")
             print(e)
 
         # BANANA STRATEGY
-        try:
-            result[BANANAS] = self.bananas_strategy(state)
-        except Exception as e:
-            print("Error in bananas strategy")
-            print(e)
+        # try:
+        #     result[BANANAS] = self.bananas_strategy(state)
+        # except Exception as e:
+        #     print("Error in bananas strategy")
+        #     print(e)
 
         print("+---------------------------------+")
 
