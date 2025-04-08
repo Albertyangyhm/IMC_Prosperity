@@ -1,0 +1,102 @@
+from typing import Dict, List
+import math
+import statistics
+import pandas as pd
+import numpy as np
+from datamodel import OrderDepth, TradingState, Order
+
+
+class Trader:
+
+  def __init__(self):
+    # dictionary of lists
+    self.stateHistory = []
+    self.enteredLong = False
+    self.enteredShort = False
+    self.prevValue = 0
+    self.time = 0
+    self.r4long = False
+    self.r4short = False
+
+  def updateProductHist(self, productName, state, ifPop):
+
+    self.stateHistory.append(state)
+    startDay = 0 if not ifPop else len(self.stateHistory) - 6
+    order_depth_hist = [
+      i.order_depths[productName] for i in self.stateHistory[startDay:-1]
+    ]
+    sell_orders_hist = [i.sell_orders for i in order_depth_hist]
+    buy_orders_hist = [i.buy_orders for i in order_depth_hist]
+
+    best_ask_hist = [[min(orders.keys()), orders[min(orders.keys())]] \
+                    for orders in sell_orders_hist]
+    best_bid_hist = [[max(orders.keys()), orders[max(orders.keys())]] \
+                    for orders in buy_orders_hist]
+
+    best_ask_vol_hist = [i[1] for i in best_ask_hist]
+    best_bid_vol_hist = [i[1] for i in best_bid_hist]
+    best_ask_hist = [i[0] for i in best_bid_hist]
+    best_bid_hist = [i[0] for i in best_bid_hist]
+
+    return best_ask_hist, best_ask_vol_hist, best_bid_hist, best_bid_vol_hist
+
+  def run(self, state: TradingState):
+    """
+        Only method required. It takes all buy and sell orders for all symbols as an input,
+        and outputs a list of orders to be sent
+        """
+    # Initialize the method output dict as an empty dict
+    result = {}
+    rf_best_ask_hist, rf_best_ask_vol_hist, rf_best_bid_hist, rf_best_bid_vol_hist = \
+      self.updateProductHist('RAINFOREST_RESIN', state, False)
+
+    rf_mid = []
+    for i in range(len(rf_best_ask_hist)):
+      rf_mid.append((rf_best_ask_hist[i] + rf_best_bid_hist[i]) / 2)
+
+    rf_orders: list[Order] = []
+
+    for product in state.order_depths.keys():
+      if product == 'RAINFOREST_RESIN':
+        rf_max = 50 
+        # Get the current RAINFOREST_RESIN position
+        rf_position = state.position.get('RAINFOREST_RESIN', 0)
+        rf_buy_limit = rf_max - rf_position
+        rf_sell_limit = rf_position + rf_position
+
+        order_depth: OrderDepth = state.order_depths[product]
+        best_ask = min(order_depth.sell_orders.keys())
+        best_ask_volume = order_depth.sell_orders[best_ask]
+        best_bid = max(order_depth.buy_orders.keys())
+        best_bid_volume = order_depth.buy_orders[best_bid]
+
+        #spread = best_ask - best_bid 
+        # my_bid = min(9999,best_bid+1)
+        # my_ask = max(10001,best_ask-1) 
+        my_bid = 9999 
+        my_ask = 10001
+
+        if abs(rf_position) < 30:
+          rf_orders.append(Order('RAINFOREST_RESIN', my_ask, -min(30 + rf_position, rf_sell_limit)))
+          rf_orders.append(Order('RAINFOREST_RESIN', my_bid, min(30 - rf_position,rf_buy_limit)))
+
+        if 40> rf_position >= 30:
+          amount = min(5, best_bid_volume)
+          rf_orders.append(Order('RAINFOREST_RESIN', my_ask, -amount))
+        if -40 <rf_position <= -30:
+          amount = min(5, best_ask_volume)
+          rf_orders.append(Order('RAINFOREST_RESIN', my_bid, amount))
+
+        if rf_position >= 40:
+          amount = min(5, best_bid_volume)
+          rf_orders.append(Order('RAINFOREST_RESIN', 10000, -amount))
+        if rf_position <= -40:
+          amount = min(5, best_bid_volume)
+          rf_orders.append(Order('RAINFOREST_RESIN', 10000, amount))
+
+    result['RAINFOREST_RESIN'] = rf_orders
+    self.time += 1
+    traderData = 'ZZY'
+    conversions = 0 # saved for ETF 
+    return result,conversions,traderData
+  
