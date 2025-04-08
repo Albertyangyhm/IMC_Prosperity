@@ -44,59 +44,76 @@ class Trader:
     """
         Only method required. It takes all buy and sell orders for all symbols as an input,
         and outputs a list of orders to be sent
-        """
+    """
     # Initialize the method output dict as an empty dict
     result = {}
-    rf_best_ask_hist, rf_best_ask_vol_hist, rf_best_bid_hist, rf_best_bid_vol_hist = \
-      self.updateProductHist('RAINFOREST_RESIN', state, False)
+    rf_orders = []
+    product = 'RAINFOREST_RESIN'
+    position = state.position.get(product, 0)
+    limit = 50
+    base_size = 10
 
-    rf_mid = []
-    for i in range(len(rf_best_ask_hist)):
-      rf_mid.append((rf_best_ask_hist[i] + rf_best_bid_hist[i]) / 2)
+    order_depth = state.order_depths[product]
+    best_bid = max(order_depth.buy_orders.keys())
+    best_ask = min(order_depth.sell_orders.keys())
+    best_bid_volume = order_depth.buy_orders[best_bid]
+    best_ask_volume = order_depth.sell_orders[best_ask]
 
-    rf_orders: list[Order] = []
+    spread = best_ask - best_bid
+    fair_value = 10000
 
-    for product in state.order_depths.keys():
-      if product == 'RAINFOREST_RESIN':
-        rf_max = 50 
-        # Get the current RAINFOREST_RESIN position
-        rf_position = state.position.get('RAINFOREST_RESIN', 0)
-        rf_buy_limit = rf_max - rf_position
-        rf_sell_limit = rf_position + rf_position
+    # === Improved quoting logic ===
 
-        order_depth: OrderDepth = state.order_depths[product]
-        best_ask = min(order_depth.sell_orders.keys())
-        best_ask_volume = order_depth.sell_orders[best_ask]
-        best_bid = max(order_depth.buy_orders.keys())
-        best_bid_volume = order_depth.buy_orders[best_bid]
+    # Quote skew based on inventory
+    skew = int(-position * 0.05)
 
-        #spread = best_ask - best_bid 
-        # my_bid = min(9999,best_bid+1)
-        # my_ask = max(10001,best_ask-1) 
-        my_bid = 9999 
-        my_ask = 10001
+    # Adaptive quoting (inside spread if wide)
+    if spread >= 4:
+        my_bid = best_bid + 1 + skew
+        my_ask = best_ask - 1 + skew
+    else:
+        my_bid = 9999 + skew
+        my_ask = 10001 + skew
 
-        if abs(rf_position) < 30:
-          rf_orders.append(Order('RAINFOREST_RESIN', my_ask, -min(30 + rf_position, rf_sell_limit)))
-          rf_orders.append(Order('RAINFOREST_RESIN', my_bid, min(30 - rf_position,rf_buy_limit)))
+    # Clamp to outer bounds
+    my_bid = min(my_bid, 9999)
+    my_ask = max(my_ask, 10001)
 
-        if 40> rf_position >= 30:
-          amount = min(5, best_bid_volume)
-          rf_orders.append(Order('RAINFOREST_RESIN', my_ask, -amount))
-        if -40 <rf_position <= -30:
-          amount = min(5, best_ask_volume)
-          rf_orders.append(Order('RAINFOREST_RESIN', my_bid, amount))
+    # Size adjustment — larger when flat
+    size = base_size + max(0, (limit - abs(position)) // 10)
 
-        if rf_position >= 40:
-          amount = min(5, best_bid_volume)
-          rf_orders.append(Order('RAINFOREST_RESIN', 10000, -amount))
-        if rf_position <= -40:
-          amount = min(5, best_bid_volume)
-          rf_orders.append(Order('RAINFOREST_RESIN', 10000, amount))
+    # === Inventory-safe quoting ===
+    buyable = max(0, limit - position)
+    sellable = max(0, limit + position)
 
-    result['RAINFOREST_RESIN'] = rf_orders
+    if buyable > 0:
+        rf_orders.append(Order(product, my_bid, min(size, buyable)))
+    if sellable > 0:
+        rf_orders.append(Order(product, my_ask, -min(size, sellable)))
+
+    # === Light trimming logic (only if within safe bounds)
+    if 40 > position >= 30:
+        trim_size = min(5, best_bid_volume, sellable)
+        if trim_size > 0:
+            rf_orders.append(Order(product, best_bid, -trim_size))
+    elif -40 < position <= -30:
+        trim_size = min(5, best_ask_volume, buyable)
+        if trim_size > 0:
+            rf_orders.append(Order(product, best_ask, trim_size))
+
+    # === Hard cut at edges (no limit breach)
+    if position >= 40:
+        cut_size = min(10, best_bid_volume, sellable)
+        if cut_size > 0:
+            rf_orders.append(Order(product, best_bid, -cut_size))
+    elif position <= -40:
+        cut_size = min(10, best_ask_volume, buyable)
+        if cut_size > 0:
+            rf_orders.append(Order(product, best_ask, cut_size))
+
+    # === Finalize output
+    result[product] = rf_orders
     self.time += 1
     traderData = 'ZZY'
-    conversions = 0 # saved for ETF 
-    return result,conversions,traderData
-  
+    conversions = 0
+    return result, conversions, traderData
