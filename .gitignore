@@ -1,11 +1,6 @@
 data/
 results/
-
-# Ignore Python compiled bytecode directories
 __pycache__/
-
-# Ignore macOS custom folder attributes files
 .DS_Store
-
-# Ignore Comma Separated Value files
 *.csv
+*.log

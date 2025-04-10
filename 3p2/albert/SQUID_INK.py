@@ -149,32 +149,47 @@ class Trader:
             ask_vols_now.append(ask_v)
         except:
             continue
-
+    threshold = 12
     # Remove NaNs and zeros
-    bid_filtered = [(p, v) for p, v in zip(bid_prices_now, bid_vols_now) if p is not None and v is not None and v != 0]
-    ask_filtered = [(p, v) for p, v in zip(ask_prices_now, ask_vols_now) if p is not None and v is not None and v != 0]
-
-    if bid_filtered:
-        book_bid = sum(p * v for p, v in bid_filtered) / sum(v for _, v in bid_filtered)
+    bid_filtered_l = [(p, v) for p, v in zip(bid_prices_now, bid_vols_now) if p is not None and v is not None and v != 0 and v >= threshold]
+    ask_filtered_l = [(p, v) for p, v in zip(ask_prices_now, ask_vols_now) if p is not None and v is not None and v != 0 and v >= threshold]
+    
+    if bid_filtered_l:
+        book_bid_l = sum(p * v for p, v in bid_filtered_l) / sum(v for _, v in bid_filtered_l)
     else:
-        book_bid = best_bid
+        book_bid_l = best_bid
 
-    if ask_filtered:
-        book_ask = sum(p * v for p, v in ask_filtered) / sum(v for _, v in ask_filtered)
+    if ask_filtered_l:
+        book_ask_l = sum(p * v for p, v in bid_filtered_l) / sum(v for _, v in bid_filtered_l)
     else:
-        book_ask = best_ask
+        book_ask_l = best_ask
 
-    book_mid = (book_bid + book_ask) / 2
+    bid_filtered_s = [(p, v) for p, v in zip(bid_prices_now, bid_vols_now) if p is not None and v is not None and v != 0 and v <= threshold]
+    ask_filtered_s = [(p, v) for p, v in zip(ask_prices_now, ask_vols_now) if p is not None and v is not None and v != 0 and v <= threshold]
+
+    if bid_filtered_s:
+        book_bid_s = sum(p * v for p, v in bid_filtered_s) / sum(v for _, v in bid_filtered_s)
+    else:
+        book_bid_s = best_bid
+    
+    if ask_filtered_s:
+        book_ask_s = sum(p * v for p, v in ask_filtered_s) / sum(v for _, v in ask_filtered_s)
+    else:
+        book_ask_s = best_ask
+
+
+    book_mid_l = (book_bid_l + book_ask_l) / 2
+    book_mid_s = (book_bid_s + book_ask_s) / 2
     current_mid = (best_bid + best_ask) / 2
-    mid_diff = current_mid - book_mid
+    mid_diff = book_mid_l - book_mid_s
 
     if mid_diff > 0.05:
-        sq_orders.append(Order(product,int(book_mid),buyable))
-        sq_orders.append(Order(product,int(current_mid),-sellable))
+        sq_orders.append(Order(product,int(book_mid_l),buyable))
+        sq_orders.append(Order(product,int(book_mid_s),-sellable))
     
     elif mid_diff < -0.05:
-        sq_orders.append(Order(product,int(book_mid),-sellable))
-        sq_orders.append(Order(product,int(current_mid),buyable))
+        sq_orders.append(Order(product,int(book_mid_l),-sellable))
+        sq_orders.append(Order(product,int(book_mid_s),buyable))
     
     else:
         if position > 0:
