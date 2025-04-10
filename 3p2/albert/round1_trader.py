@@ -1,5 +1,5 @@
 from typing import Dict, List
-from datamodel import OrderDepth, TradingState, Order
+from datamodel import OrderDepth, TradingState, Order, Logger
 
 import math
 
@@ -17,6 +17,8 @@ DEFAULT_PRICES = {
     RR : 10_000,
     BANANAS : 5_000,
 }
+
+logger = Logger()
 
 class Trader:
 
@@ -219,5 +221,7 @@ class Trader:
         #     print(e)
 
         print("+---------------------------------+")
-
-        return result
+        conversions = 0
+        trader_data = ""
+        logger.flush(state, result, conversions, trader_data)
+        return result, 0, ""

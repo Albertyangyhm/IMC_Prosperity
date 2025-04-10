@@ -1,3 +1,9 @@
+USE THIS TO DO THE BACK TESTER
+
+https://docs.google.com/document/d/1MHVr03VN5gFYhkLGbZUdszXCi8bY50xWfbsSVeTk_Vs/edit?usp=sharing
+
+
+
 # 📈 IMC Prosperity
 
 Repository containing the code from [IMC Prosperity](https://prosperity.imc.com/)'s challenge. Our team got the 91st place out of more than 8000 teams.
