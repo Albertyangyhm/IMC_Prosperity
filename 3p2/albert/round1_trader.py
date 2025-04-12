@@ -1,12 +1,14 @@
 from typing import Dict, List
-from datamodel import OrderDepth, TradingState, Order, Logger
+from datamodel import OrderDepth, TradingState, Order
+# from datamodel import Logger
+# logger = Logger()
 
 import math
 
 # storing string as const to avoid typos
 SUBMISSION = "SUBMISSION"
 RR = "RAINFOREST_RESIN"
-BANANAS = "BANANAS"
+BANANAS = "SQUID_INK"
 
 PRODUCTS = [
     RR,
@@ -17,8 +19,6 @@ DEFAULT_PRICES = {
     RR : 10_000,
     BANANAS : 5_000,
 }
-
-logger = Logger()
 
 class Trader:
 
@@ -47,15 +47,14 @@ class Trader:
         for product in PRODUCTS:
             self.ema_prices[product] = None
 
-        self.ema_param = 0.5
+        self.ema_param = 0.1
 
 
     # utils
     def get_position(self, product, state : TradingState):
         return state.position.get(product, 0)    
 
-    def get_mid_price(self, product, state : TradingState):
-
+    def get_mid_price(self, product, state: TradingState, weight_by_volume: bool = False):
         default_price = self.ema_prices[product]
         if default_price is None:
             default_price = DEFAULT_PRICES[product]
@@ -67,55 +66,36 @@ class Trader:
         if len(market_bids) == 0:
             # There are no bid orders in the market (midprice undefined)
             return default_price
-        
+
         market_asks = state.order_depths[product].sell_orders
         if len(market_asks) == 0:
-            # There are no bid orders in the market (mid_price undefined)
+            # There are no ask orders in the market (mid_price undefined)
             return default_price
-        
+
         best_bid = max(market_bids)
         best_ask = min(market_asks)
-        return (best_bid + best_ask)/2
 
-    def get_value_on_product(self, product, state : TradingState):
-        """
-        Returns the amount of MONEY currently held on the product.  
-        """
-        return self.get_position(product, state) * self.get_mid_price(product, state)
-            
-    def update_pnl(self, state : TradingState):
-        """
-        Updates the pnl.
-        """
-        def update_cash():
-            # Update cash
-            for product in state.own_trades:
-                for trade in state.own_trades[product]:
-                    if trade.timestamp != state.timestamp - 100:
-                        # Trade was already analyzed
-                        continue
+        if weight_by_volume:
+            bid_volume = sum(volume for price, volume in market_bids.items())
+            ask_volume = sum(volume for price, volume in market_asks.items())
+            total_volume = bid_volume + ask_volume
 
-                    if trade.buyer == SUBMISSION:
-                        self.cash -= trade.quantity * trade.price
-                    if trade.seller == SUBMISSION:
-                        self.cash += trade.quantity * trade.price
-        
-        def get_value_on_positions():
-            value = 0
-            for product in state.position:
-                value += self.get_value_on_product(product, state)
-            return value
-        
-        # Update cash
-        update_cash()
-        return self.cash + get_value_on_positions()
+            if total_volume == 0:
+                return default_price
+
+            weighted_bid_price = sum(price * volume for price, volume in market_bids.items()) / bid_volume
+            weighted_ask_price = sum(price * volume for price, volume in market_bids.items()) / ask_volume
+
+            return (weighted_bid_price + weighted_ask_price) / 2
+        else:
+            return (best_bid + best_ask) / 2
 
     def update_ema_prices(self, state : TradingState):
         """
         Update the exponential moving average of the prices of each product.
         """
         for product in PRODUCTS:
-            mid_price = self.get_mid_price(product, state)
+            mid_price = self.get_mid_price(product, state, weight_by_volume=False)
             if mid_price is None:
                 continue
 
@@ -186,42 +166,27 @@ class Trader:
         """
 
         self.round += 1
-        pnl = self.update_pnl(state)
         self.update_ema_prices(state)
-
-        print(f"Log round {self.round}")
-
-        print("TRADES:")
-        for product in state.own_trades:
-            for trade in state.own_trades[product]:
-                if trade.timestamp == state.timestamp - 100:
-                    print(trade)
-
-        print(f"\tCash {self.cash}")
-        for product in PRODUCTS:
-            print(f"\tProduct {product}, Position {self.get_position(product, state)}, Midprice {self.get_mid_price(product, state)}, Value {self.get_value_on_product(product, state)}, EMA {self.ema_prices[product]}")
-        print(f"\tPnL {pnl}")
         
-
         # Initialize the method output dict as an empty dict
         result = {}
 
         # PEARL STRATEGY
-        try:
-            result[RR] = self.rr_strategy(state)
-        except Exception as e:
-            print("Error in rr strategy")
-            print(e)
+        # try:
+        #     result[RR] = self.rr_strategy(state)
+        # except Exception as e:
+        #     print("Error in rr strategy")
+        #     print(e)
 
         # BANANA STRATEGY
-        # try:
-        #     result[BANANAS] = self.bananas_strategy(state)
-        # except Exception as e:
-        #     print("Error in bananas strategy")
-        #     print(e)
+        try:
+            result[BANANAS] = self.bananas_strategy(state)
+        except Exception as e:
+            print("Error in bananas strategy")
+            print(e)
 
         print("+---------------------------------+")
         conversions = 0
         trader_data = ""
-        logger.flush(state, result, conversions, trader_data)
+        # logger.flush(state, result, conversions, trader_data)
         return result, 0, ""

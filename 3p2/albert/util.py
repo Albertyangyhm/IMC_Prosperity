@@ -22,7 +22,7 @@ def get_column(df, column_name):
     return None
   return df[column_name]
 
-def plot_xy(x_data, y_data, y2_data=None, x_label="X-axis", y_label="Y-axis", y2_label=None, title="Simple Plot"):
+def plot_xy(x_data, y_data, y2_data=None, x_label="X-axis", y_label="Y-axis", y2_label=None, title="Simple Plot", color_threshold=None):
   try:
     # Check for equal length
     if len(x_data) != len(y_data):
@@ -36,7 +36,12 @@ def plot_xy(x_data, y_data, y2_data=None, x_label="X-axis", y_label="Y-axis", y2
     return
 
   fig = go.Figure()
-  fig.add_trace(go.Scatter(x=x_data, y=y_data, mode='markers', name=y_label))
+
+  if color_threshold is not None:
+    color = ['red' if y > color_threshold else 'blue' for y in y_data]
+    fig.add_trace(go.Scatter(x=x_data, y=y_data, mode='markers', name=y_label, marker=dict(color=color)))
+  else:
+    fig.add_trace(go.Scatter(x=x_data, y=y_data, mode='markers', name=y_label))
 
   if y2_data is not None:
     fig.add_trace(go.Scatter(x=x_data, y=y2_data, mode='markers', name=y2_label))
@@ -327,3 +332,96 @@ def plot_histogram_from_series(series, bins='auto', title=None, xlabel=None, yla
   except Exception as e:
       print(f"An error occurred during plotting: {e}")
       return None
+  
+
+def aggregate_trades_by_timestamp(df: pd.DataFrame) -> pd.DataFrame:
+  """
+  Aggregates trades in a DataFrame occurring at the same timestamp.
+
+  Combines rows with identical timestamps by calculating the average
+  of their 'price'. Other columns will retain the value from the
+  first row within each timestamp group.
+
+  Args:
+    df (pd.DataFrame): Input DataFrame assumed to have at least
+                       'timestamp' and 'price' columns.
+
+  Returns:
+    pd.DataFrame: A new DataFrame with trades aggregated by timestamp,
+                  including the calculated average 'price'. Rows are
+                  sorted by timestamp implicitly by the groupby operation.
+
+  Raises:
+    TypeError: If the input is not a pandas DataFrame.
+    ValueError: If the DataFrame does not contain 'timestamp' or 'price' columns.
+  """
+  if not isinstance(df, pd.DataFrame):
+      raise TypeError("Input must be a pandas DataFrame.")
+  if 'timestamp' not in df.columns:
+      raise ValueError("DataFrame must contain a 'timestamp' column.")
+  if 'price' not in df.columns:
+      raise ValueError("DataFrame must contain a 'price' column.")
+
+  # --- Aggregation Logic ---
+  # Create a dictionary to define how each column should be aggregated.
+  # Default to taking the 'first' value for columns other than 'price'.
+  agg_dict = {col: 'first' for col in df.columns if col != 'timestamp'}
+
+  # Specifically set 'price' to be averaged ('mean').
+  agg_dict['price'] = 'mean'
+
+  # If you have a 'quantity' or 'volume' column you want to sum, add it:
+  # if 'quantity' in agg_dict:
+  #   agg_dict['quantity'] = 'sum'
+
+  # Group by timestamp and apply the aggregation rules
+  aggregated_df = df.groupby('timestamp', as_index=False).agg(agg_dict)
+  # Using as_index=False keeps 'timestamp' as a regular column.
+  # Alternatively, use .reset_index() after the agg() call.
+
+  return aggregated_df
+
+import pandas as pd
+
+def filter_df_by_timestamps(df_reference: pd.DataFrame,
+                            df_to_filter: pd.DataFrame,
+                            timestamp_col: str = 'timestamp') -> pd.DataFrame:
+  """
+  Filters a DataFrame (df_to_filter) based on timestamps present in another
+  DataFrame (df_reference).
+
+  Keeps only the rows in df_to_filter where the value in the specified
+  timestamp column exists in the timestamp column of df_reference.
+
+  Args:
+    df_reference (pd.DataFrame): The DataFrame containing the reference timestamps.
+    df_to_filter (pd.DataFrame): The DataFrame to be filtered.
+    timestamp_col (str): The name of the column containing timestamps
+                         in both DataFrames. Defaults to 'timestamp'.
+
+  Returns:
+    pd.DataFrame: A new DataFrame containing only the rows from df_to_filter
+                  whose timestamp value exists in df_reference.
+
+  Raises:
+    TypeError: If inputs are not pandas DataFrames.
+    ValueError: If the timestamp column is not found in either DataFrame.
+  """
+  if not isinstance(df_reference, pd.DataFrame) or not isinstance(df_to_filter, pd.DataFrame):
+      raise TypeError("Both inputs must be pandas DataFrames.")
+  if timestamp_col not in df_reference.columns:
+      raise ValueError(f"Timestamp column '{timestamp_col}' not found in df_reference (df1).")
+  if timestamp_col not in df_to_filter.columns:
+      raise ValueError(f"Timestamp column '{timestamp_col}' not found in df_to_filter (df2).")
+
+  # 1. Get the unique timestamps from the reference DataFrame (df1)
+  # Using unique() is efficient and handles potential duplicates in df1
+  valid_timestamps = df_reference[timestamp_col].unique()
+
+  # 2. Use boolean indexing with `.isin()` to filter the second DataFrame (df2)
+  # This checks for each timestamp in df_to_filter if it is present in the valid_timestamps array
+  filtered_df = df_to_filter[df_to_filter[timestamp_col].isin(valid_timestamps)].copy()
+  # Using .copy() prevents SettingWithCopyWarning if you modify the result later
+
+  # 3. Return the filtered DataFrame
+  return filtered_df
