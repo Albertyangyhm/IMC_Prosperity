@@ -65,6 +65,7 @@ class Trader:
 
     def __init__(self):
         # Underlying mid‑prices for moving average of underlying (mavo)
+        self.timestamp = 0
         self.underlying_mavo: List[float] = []
         self.last_underlying_mid: float | None = None
 
@@ -83,10 +84,11 @@ class Trader:
         self.min_volatility = 0.001
 
         self.option_half_spreads = {
-            "VOLCANIC_ROCK_VOUCHER_9750": 8.380629e-03,
+            "VOLCANIC_ROCK_VOUCHER_9750": 0.003,
             "VOLCANIC_ROCK_VOUCHER_10000": 5.310120e-03,
             "VOLCANIC_ROCK_VOUCHER_10250": 7.577622e-04,
             "VOLCANIC_ROCK_VOUCHER_10500": 1.519836e-03,
+            "VOLCANIC_ROCK_VOUCHER_9500": 8.380629e-03,
         }
 
     # ---------------------------------------------------------------------
@@ -146,6 +148,7 @@ class Trader:
             # Strike & time to maturity
             strike = float(product.split("_")[-1])
             ttm = ttm_const
+            ttm -= self.timestamp * 1/10000 * 1/252
 
             # ---------------------------
             # 3A) Implied volatility
@@ -178,7 +181,7 @@ class Trader:
 
             buy_quote = BlackScholes.black_scholes_call(spot, strike, ttm, vol_minus)
             sell_quote = BlackScholes.black_scholes_call(spot, strike, ttm, vol_plus)
-            delta_per_contract = BlackScholes.delta_call(spot, strike, ttm, iv_ma)
+            
 
             pos = state.position.get(product, 0)
             max_pos = self.LIMIT_CALLS
@@ -195,14 +198,18 @@ class Trader:
                     qty = min(buyable_qty, -ask_vol)
                     if qty > 0:
                         product_orders.append(Order(product, ask_price, qty))
+                        delta_per_contract = BlackScholes.delta_call(ask_price, strike, ttm, iv_ma)
                         buyable_qty -= qty
                         self.net_delta += delta_per_contract * qty
+                        print(f"BUY {product} @ {ask_price} qty {qty} delta/contract {delta_per_contract:.2f} delta {delta_per_contract * qty:.2f}")
                 else:
                     break
             if buyable_qty > 0:
                 px = int(round(buy_quote))
                 product_orders.append(Order(product, px, buyable_qty))
+                delta_per_contract = BlackScholes.delta_call(px, strike, ttm, iv_ma)
                 self.net_delta += delta_per_contract * buyable_qty
+                print(f"BUY {product} @ {ask_price} qty {qty} delta/contract {delta_per_contract:.2f} delta {delta_per_contract * buyable_qty:.2f}")
 
             # ---------------------------
             # 3E) Hit bids within quote
@@ -212,14 +219,18 @@ class Trader:
                     qty = min(sellable_qty, bid_vol)
                     if qty > 0:
                         product_orders.append(Order(product, bid_price, -qty))
+                        delta_per_contract = BlackScholes.delta_call(bid_price, strike, ttm, iv_ma)
                         sellable_qty -= qty
                         self.net_delta -= delta_per_contract * qty
+                        print(f"SELL {product} @ {bid_price} qty {qty} delta/contract {delta_per_contract:.2f} delta {-delta_per_contract * qty:.2f}")
                 else:
                     break
             if sellable_qty > 0:
                 px = int(round(sell_quote))
                 product_orders.append(Order(product, px, -sellable_qty))
+                delta_per_contract = BlackScholes.delta_call(px, strike, ttm, iv_ma)
                 self.net_delta -= delta_per_contract * sellable_qty
+                print(f"SELL {product} @ {bid_price} qty {qty} delta/contract {delta_per_contract:.2f} delta {-delta_per_contract * sellable_qty:.2f}")
 
             orders[product] = product_orders
 
@@ -234,6 +245,7 @@ class Trader:
 
             # Desired hedge quantity (integer)
             hedge_qty = -round(self.net_delta)
+            print( f"hedge_qty: {hedge_qty:.2f}")
             current_pos = state.position.get("VOLCANIC_ROCK", 0)
             capacity_buy = self.LIMIT_UNDERLYING - current_pos
             capacity_sell = current_pos + self.LIMIT_UNDERLYING
@@ -244,16 +256,20 @@ class Trader:
                     px = best_ask if best_ask is not None else int(round(self.last_underlying_mid))
                     hedge_orders.append(Order("VOLCANIC_ROCK", px, qty))
                     self.net_delta += qty  # delta of underlying = qty
+                    print(f"HEDGE: BUY underlying @ {px} qty {qty} delta {qty:.2f}")
             elif hedge_qty < 0:  # need to sell underlying
                 qty = min(-hedge_qty, capacity_sell)
                 if qty > 0:
                     px = best_bid if best_bid is not None else int(round(self.last_underlying_mid))
                     hedge_orders.append(Order("VOLCANIC_ROCK", px, -qty))
                     self.net_delta -= qty
+                    print(f"HEDGE: SELL underlying @ {px} qty {qty} delta {-qty:.2f}")
 
         if hedge_orders:
             orders.setdefault("VOLCANIC_ROCK", []).extend(hedge_orders)
 
+        print(f"Net delta: {self.net_delta:.2f}")
+        self.timestamp += 1
         trader_data = "VOLCANO_TRADER_STATE"
         return orders, conversions, trader_data
 
@@ -261,6 +277,13 @@ class Trader:
     # Helper for dynamic MA window selection
     # ---------------------------------------------------------------------
     def choose_ma_window(self, product: str, vol_of_vol: float) -> int:
+        if product == "VOLCANIC_ROCK_VOUCHER_9500":
+            if vol_of_vol > 0.008:
+                return 4
+            if vol_of_vol > 0.006:
+                return 8
+            return 12
+        
         if product == "VOLCANIC_ROCK_VOUCHER_9750":
             return 5 if vol_of_vol > 0.015 else 8
         if product == "VOLCANIC_ROCK_VOUCHER_10000":
